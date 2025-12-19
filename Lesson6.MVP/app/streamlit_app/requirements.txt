@@ -1,0 +1,14 @@
+sqlmodel==0.0.24
+bcrypt==3.2.0
+passlib[bcrypt]
+psycopg2-binary==2.9.10
+pydantic-settings
+asyncpg==0.30.0
+psycopg==3.2.9
+httpx==0.28.1
+python-jose==3.5.0
+streamlit==1.48.1 
+requests
+dotenv
+python-multipart
+pytest

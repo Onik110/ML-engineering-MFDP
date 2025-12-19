@@ -1,0 +1,179 @@
+#version: '3'
+services:
+  app:
+      build: ./app/
+      container_name: event-planner-app
+      env_file:
+        - ./app/.env
+      ports:
+        - "8080:8080"
+      volumes:
+        - ./app:/app
+      depends_on:
+        db:
+          condition: service_healthy
+      networks:
+        - event-planner-networks
+      healthcheck:
+        test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/health"]
+        interval: 10s
+        timeout: 5s
+        retries: 6
+        start_period: 120s
+
+    # Воркер 1
+  ml_worker_1:
+      build: ./app/ml_worker/
+      container_name: event-planner-ml-worker-1
+      restart: unless-stopped
+      env_file:
+        - .env
+      volumes:
+        - ./app:/app
+        - ./data:/data  
+      depends_on:
+        db:
+          condition: service_healthy
+        rabbitmq:
+          condition: service_healthy
+      networks:
+        - event-planner-networks
+      environment:
+      - PYTHONPATH=/app 
+
+    # Воркер 2
+  ml_worker_2:
+      build: ./app/ml_worker/
+      container_name: event-planner-ml-worker-2
+      restart: unless-stopped
+      env_file:
+        - .env
+      volumes:
+        - ./app:/app
+        - ./data:/data  
+      depends_on:
+        db:
+          condition: service_healthy
+        rabbitmq:
+          condition: service_healthy
+      networks:
+        - event-planner-networks
+      environment:
+      - PYTHONPATH=/app 
+
+    # Воркер 3
+  ml_worker_3:
+      build: ./app/ml_worker/
+      container_name: event-planner-ml-worker-3
+      restart: unless-stopped
+      env_file:
+        - .env
+      volumes:
+        - ./app:/app
+        - ./data:/data  
+      depends_on:
+        db:
+          condition: service_healthy
+        rabbitmq:
+          condition: service_healthy
+      networks:
+        - event-planner-networks
+      environment:
+      - PYTHONPATH=/app  
+
+  web-proxy:
+      image: nginx:1.19
+      ports:
+        - 80:80
+        - 443:443
+      depends_on:
+        app:
+          condition: service_healthy
+      volumes:
+        - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      networks:
+        - event-planner-networks
+
+
+  db:
+      image: postgres:16-alpine
+      container_name: event-planner-db
+      restart: unless-stopped
+      volumes: 
+      - database_volume:/var/lib/postgresql/data
+      environment:
+        - POSTGRES_USER=${DB_USER}
+        - POSTGRES_PASSWORD=${DB_PASS}
+        - POSTGRES_DB=${DB_NAME}
+      ports:
+        - "5432:5432"
+      networks:
+        - event-planner-networks
+      healthcheck:
+        test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+        interval: 30s
+        timeout: 10s
+        retries: 5
+        start_period: 10s
+
+  rabbitmq:
+      image: rabbitmq:3.13.1-management-alpine
+      container_name: rabbitmq_for_planner
+      hostname: rabbitmq
+      restart: unless-stopped
+      environment:
+        - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER}
+        - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASS}
+        - RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS=-rabbit disk_free_limit 2147483648
+      volumes:
+        - rabbitmq_volume:/var/lib/rabbitmq
+      ports:
+        - "15672:15672"  # Management UI
+        - "5672:5672"    # AMQP protocol
+      healthcheck:
+        test: ["CMD", "rabbitmq-diagnostics", "check_running"]
+        interval: 30s
+        timeout: 10s
+        retries: 3
+      networks:
+        - event-planner-networks
+
+  streamlit:
+      build: ./app/streamlit_app
+      container_name: event-planner-streamlit
+      ports:
+        - "8501:8501" 
+      env_file:
+        - ./app/.env 
+      environment:
+        - PYTHONPATH=/app
+      networks:
+        - event-planner-networks
+  
+  tests:
+    build: ./app/
+    command: >
+      sh -c "
+      echo 'Ожидаем запуска app...'
+      while ! curl -f http://app:8080/health; do sleep 2; done
+      pip install pytest requests
+      cd /app
+      python -m pytest tests/ -v --tb=short
+      "
+    volumes:
+      - ./app:/app
+      - ./data:/data  
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - event-planner-networks
+
+volumes:
+  rabbitmq_volume:
+  database_volume:
+
+networks:
+  event-planner-networks:
+    name: event-planner-networks
+    driver: bridge
